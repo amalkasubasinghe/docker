@@ -18,7 +18,7 @@ RUN addgroup -g ${gid} ${group} \
 
 # Jenkins home directory is a volume, so configuration and build history 
 # can be persisted and survive image upgrades
-VOLUME /var/jenkins_home
+#VOLUME /var/jenkins_home
 
 # `/usr/share/jenkins/ref/` contains all reference configuration we want 
 # to set on a fresh new installation. Use it to bundle additional plugins 
@@ -53,19 +53,53 @@ ENV JENKINS_UC https://updates.jenkins.io
 RUN chown -R ${user} "$JENKINS_HOME" /usr/share/jenkins/ref
 
 # for main web interface:
-EXPOSE 8080
+EXPOSE 8080 8443
 
 # will be used by attached slave agents:
-EXPOSE 50000
+#EXPOSE 50000
 
 ENV COPY_REFERENCE_FILE_LOG $JENKINS_HOME/copy_reference_file.log
+
+#----------------------------------------------------
+ARG MAVEN_VERSION=3.3.9
+#ARG USER_HOME_DIR="/var/maven_home"
+
+RUN mkdir -p /usr/share/maven /usr/share/maven/ref/ \
+  && curl -fsSL http://apache.osuosl.org/maven/maven-3/$MAVEN_VERSION/binaries/apache-maven-$MAVEN_VERSION-bin.tar.gz \
+    | tar -xzC /usr/share/maven --strip-components=1 \
+  && ln -s /usr/share/maven/bin/mvn /usr/bin/mvn
+
+ENV MAVEN_HOME /usr/share/maven
+#ENV MAVEN_CONFIG "$USER_HOME_DIR/.m2"
+
+#COPY mvn-entrypoint.sh /usr/local/bin/mvn-entrypoint.sh
+COPY settings-docker.xml /usr/share/maven/ref/
+
+RUN chown -R ${user} "$MAVEN_HOME"
+
+#RUN chmod +x /usr/local/bin/mvn-entrypoint.sh \
+#  && chown -R ${user} /usr/local/bin/mvn-entrypoint.sh
+#  && /usr/local/bin/mvn-entrypoint.sh
+#-------------------------------------------------------
+RUN mkdir -p $JENKINS_HOME/jobs/HelloWebApp
+COPY HelloWebApp $JENKINS_HOME/jobs/HelloWebApp
+
+RUN chmod +x $JENKINS_HOME/jobs/HelloWebApp \
+  && chown -R ${user} $JENKINS_HOME/jobs/HelloWebApp
+
+#COPY HelloWebApp $JENKINS_HOME/jobs/HelloWebApp
 
 USER ${user}
 
 COPY jenkins-support /usr/local/bin/jenkins-support
 COPY jenkins.sh /usr/local/bin/jenkins.sh
-ENTRYPOINT ["/bin/tini", "--", "/usr/local/bin/jenkins.sh"]
+#ENTRYPOINT ["/bin/tini", "--", "/usr/local/bin/jenkins.sh"]
 
 # from a derived Dockerfile, can use `RUN plugins.sh active.txt` to setup /usr/share/jenkins/ref/plugins from a support bundle
 COPY plugins.sh /usr/local/bin/plugins.sh
 COPY install-plugins.sh /usr/local/bin/install-plugins.sh
+
+RUN install-plugins.sh docker-slaves github-branch-source
+
+ENTRYPOINT ["/bin/tini", "--", "/usr/local/bin/jenkins.sh"]
+
